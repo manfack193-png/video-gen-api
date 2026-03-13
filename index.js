@@ -15,48 +15,52 @@ cloudinary.config({
 
 let jobs = {};
 
-app.get('/', (req, res) => res.send("Video Engine Active"));
+app.get('/', (req, res) => res.send("System Online"));
 
 app.post('/make-video', (req, res) => {
     const projectId = "vid_" + Date.now();
     const vars = req.body.variables || {};
     
-    // টেক্সট থেকে সব ঝামেলাপূর্ণ চিহ্ন সরিয়ে ফেলা (এটাই সমাধান)
-    let topic = vars.topic || "Success Mindset";
-    topic = topic.replace(/[:']/g, "").replace(/[^a-zA-Z0-9\s.,!?]/g, ""); 
-    
-    // টেক্সটকে ছোট ছোট লাইনে ভাগ করা
+    // টেক্সট থেকে কোলন এবং সিঙ্গেল কোট পুরোপুরি মুছে ফেলা
+    let topic = vars.topic || "Success";
+    topic = topic.replace(/[:']/g, "").replace(/[^\x00-\x7F]/g, ""); 
+
+    // প্রতি ৪ শব্দ পর পর নতুন লাইন দেওয়া যেন স্ক্রিনে ধরে
     const words = topic.split(' ');
-    let formattedTopic = '';
+    let wrappedText = "";
     for (let i = 0; i < words.length; i++) {
-        formattedTopic += words[i] + ' ';
-        if ((i + 1) % 4 === 0) formattedTopic += '\n'; // প্রতি ৪ শব্দ পর পর নতুন লাইন
+        wrappedText += words[i] + " ";
+        if ((i + 1) % 4 === 0) wrappedText += "\n";
     }
 
     jobs[projectId] = { status: "processing", link: null };
     const outputPath = path.join(__dirname, `${projectId}.mp4`);
 
+    console.log(`Processing: ${projectId}`);
+
     ffmpeg()
-        .input('color=c=navy:s=720x1280:d=5') // ৫ সেকেন্ডের ভিডিও
+        .input('color=c=navy:s=720x1280:d=5')
         .inputFormat('lavfi')
         .complexFilter([
             {
                 filter: 'drawtext',
                 options: {
-                    text: formattedTopic.trim(),
+                    text: wrappedText.trim(),
                     fontsize: 40,
                     fontcolor: 'white',
                     x: '(w-text_w)/2',
                     y: '(h-text_h)/2',
                     box: 1,
                     boxcolor: 'black@0.6',
-                    boxborderw: 20
+                    boxborderw: 20,
+                    // এই লাইনটি স্পেশাল ক্যারেক্টার এরর বন্ধ করবে
+                    escape_mode: 'text' 
                 }
             }
         ])
         .outputOptions(['-pix_fmt yuv420p'])
         .on('error', (err) => {
-            console.log("FFmpeg Error: " + err.message);
+            console.log("FFMPEG ERROR: " + err.message);
             if(jobs[projectId]) jobs[projectId].status = "failed";
         })
         .on('end', async () => {
