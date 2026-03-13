@@ -15,46 +15,44 @@ cloudinary.config({
 
 let jobs = {};
 
-app.get('/', (req, res) => res.send("System Online"));
+app.get('/', (req, res) => res.send("Video Engine Active"));
 
 app.post('/make-video', (req, res) => {
     const projectId = "vid_" + Date.now();
     const vars = req.body.variables || {};
     
-    // টেক্সট থেকে কোলন এবং সিঙ্গেল কোট পুরোপুরি মুছে ফেলা
-    let topic = vars.topic || "Success";
-    topic = topic.replace(/[:']/g, "").replace(/[^\x00-\x7F]/g, ""); 
-
-    // প্রতি ৪ শব্দ পর পর নতুন লাইন দেওয়া যেন স্ক্রিনে ধরে
+    // টেক্সট থেকে সব ধরণের ঝামেলাপূর্ণ ক্যারেক্টার এবং নতুন লাইন মুছে ফেলা
+    let topic = (vars.topic || "Success").replace(/[:'"]/g, "").replace(/\n/g, " ");
+    
+    // টেক্সট র‍্যাপিং লজিক
     const words = topic.split(' ');
-    let wrappedText = "";
+    let finalTopic = '';
     for (let i = 0; i < words.length; i++) {
-        wrappedText += words[i] + " ";
-        if ((i + 1) % 4 === 0) wrappedText += "\n";
+        finalTopic += words[i] + ' ';
+        if ((i + 1) % 4 === 0) finalTopic += '\n';
     }
 
     jobs[projectId] = { status: "processing", link: null };
     const outputPath = path.join(__dirname, `${projectId}.mp4`);
 
-    console.log(`Processing: ${projectId}`);
+    console.log(`Working on job: ${projectId}`);
 
+    // আমরা complexFilter এর বদলে সহজ ভিডিও ফিল্টার ব্যবহার করছি
     ffmpeg()
         .input('color=c=navy:s=720x1280:d=5')
         .inputFormat('lavfi')
-        .complexFilter([
+        .videoFilters([
             {
                 filter: 'drawtext',
                 options: {
-                    text: wrappedText.trim(),
+                    text: finalTopic.trim(),
                     fontsize: 40,
                     fontcolor: 'white',
                     x: '(w-text_w)/2',
                     y: '(h-text_h)/2',
                     box: 1,
                     boxcolor: 'black@0.6',
-                    boxborderw: 20,
-                    // এই লাইনটি স্পেশাল ক্যারেক্টার এরর বন্ধ করবে
-                    escape_mode: 'text' 
+                    boxborderw: 20
                 }
             }
         ])
