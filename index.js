@@ -3,6 +3,7 @@ const cloudinary = require('cloudinary').v2;
 const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs');
+const axios = require('axios');
 
 const app = express();
 app.use(express.json());
@@ -14,67 +15,86 @@ cloudinary.config({
   api_secret: 'zMa96i-ABKmtEv24iwvS17OUseY' 
 });
 
-// জব স্ট্যাটাস ট্র্যাকিং
 let jobs = {};
 
-// ১. Home Route (Cron-job কে ৪MD এরর থেকে বাঁচাতে)
+// ১. Home Route (Cron-job এর জন্য)
 app.get('/', (req, res) => {
-    res.send("<h1>Video Generation Server is Active!</h1><p>Cron-job is working.</p>");
+    res.send("<h1>Video Engine is Active!</h1>");
 });
 
-// ২. POST Method: ভিডিও তৈরির রিকোয়েস্ট নেওয়া
-app.post('/make-video', (req, res) => {
+// ২. POST Method: এয়ারটেবিল থেকে সব ডাটা রিসিভ করা
+app.post('/make-video', async (req, res) => {
     const projectId = "vid_" + Date.now();
-    const data = req.body; // n8n থেকে আসা JSON ডেটা
+    const vars = req.body.variables || {};
+    
+    // এয়ারটেবিলের কলামগুলো থেকে ডাটা ধরা
+    const topic = vars.topic || "AI Automation";
+    const language = vars.language || "English";
+    const voiceName = vars.voice_name || "Standard";
+    const subtitlesFont = vars.subtitles_font || "Arial";
     
     jobs[projectId] = { status: "processing", link: null };
     const outputPath = path.join(__dirname, `${projectId}.mp4`);
 
-    console.log(`Processing project: ${projectId}`);
+    console.log(`Starting Project for: ${topic}`);
 
-    // ভিডিও রেন্ডারিং (এখানে স্যাম্পল ৫ সেকেন্ডের ভিডিও)
+    // ভিডিও জেনারেশন লজিক
+    // আমরা এখানে ১০ সেকেন্ডের একটি ভিডিও বানাচ্ছি যেখানে টপিক এবং ভয়েস নাম লেখা থাকবে
     ffmpeg()
-        .input('color=c=navy:s=1280x720:d=5') // নেভি ব্লু ব্যাকগ্রাউন্ড
+        .input('color=c=navy:s=720x1280:d=10') // পোর্ট্রেট মোড (Shorts Style)
         .inputFormat('lavfi')
+        .complexFilter([
+            {
+                filter: 'drawtext',
+                options: {
+                    text: `${topic}\n(${language})`,
+                    fontsize: 45,
+                    fontcolor: 'white',
+                    x: '(w-text_w)/2',
+                    y: '(h-text_h)/2 - 50',
+                    box: 1, boxcolor: 'black@0.5', boxborderw: 15
+                }
+            },
+            {
+                filter: 'drawtext',
+                options: {
+                    text: `Voice: ${voiceName}`,
+                    fontsize: 30,
+                    fontcolor: 'yellow',
+                    x: '(w-text_w)/2',
+                    y: '(h-text_h)/2 + 100'
+                }
+            }
+        ])
         .outputOptions(['-pix_fmt yuv420p'])
         .on('end', async () => {
             try {
-                // Cloudinary-তে আপলোড
+                // Cloudinary-তে আপলোড করা
                 const result = await cloudinary.uploader.upload(outputPath, { 
                     resource_type: "video",
                     public_id: projectId 
                 });
                 
-                jobs[projectId].status = "completed";
-                jobs[projectId].link = result.secure_url;
-
-                // লোকাল ফাইল মুছে ফেলা
+                jobs[projectId] = { status: "completed", link: result.secure_url };
+                
+                // লোকাল ফাইল ডিলিট
                 if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-                console.log(`Video Live: ${result.secure_url}`);
-            } catch (error) {
+                console.log("Success: " + result.secure_url);
+            } catch (err) {
                 jobs[projectId].status = "failed";
-                console.error("Cloudinary Error:", error);
+                console.error("Upload failed", err);
             }
-        })
-        .on('error', (err) => {
-            jobs[projectId].status = "failed";
-            console.error("FFmpeg Error:", err.message);
         })
         .save(outputPath);
 
-    // সাথে সাথে প্রজেক্ট আইডি রিটার্ন করা
     res.json({ project: projectId, status: "success" });
 });
 
-// ৩. GET Method: স্ট্যাটাস এবং লিঙ্ক চেক করা
+// ৩. GET Method: n8n স্ট্যাটাস চেক করবে
 app.get('/make-video', (req, res) => {
     const projectId = req.query.project;
-    if (jobs[projectId]) {
-        res.json(jobs[projectId]);
-    } else {
-        res.status(404).json({ error: "Project not found" });
-    }
+    res.json(jobs[projectId] || { error: "Not found" });
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log('Server running...'));
