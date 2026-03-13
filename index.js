@@ -3,12 +3,11 @@ const cloudinary = require('cloudinary').v2;
 const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs');
-const axios = require('axios');
 
 const app = express();
 app.use(express.json());
 
-// --- আপনার Cloudinary সেটিংস ---
+// Cloudinary কনফিগারেশন
 cloudinary.config({ 
   cloud_name: 'video-gen', 
   api_key: '974899749497919', 
@@ -17,84 +16,62 @@ cloudinary.config({
 
 let jobs = {};
 
-// ১. Home Route (Cron-job এর জন্য)
+// ১. Home Route
 app.get('/', (req, res) => {
-    res.send("<h1>Video Engine is Active!</h1>");
+    res.status(200).send("Video Engine is Active!");
 });
 
-// ২. POST Method: এয়ারটেবিল থেকে সব ডাটা রিসিভ করা
-app.post('/make-video', async (req, res) => {
+// ২. ভিডিও তৈরির রিকোয়েস্ট
+app.post('/make-video', (req, res) => {
     const projectId = "vid_" + Date.now();
     const vars = req.body.variables || {};
     
-    // এয়ারটেবিলের কলামগুলো থেকে ডাটা ধরা
-    const topic = vars.topic || "AI Automation";
+    const topic = vars.topic || "Default Topic";
     const language = vars.language || "English";
-    const voiceName = vars.voice_name || "Standard";
-    const subtitlesFont = vars.subtitles_font || "Arial";
     
     jobs[projectId] = { status: "processing", link: null };
     const outputPath = path.join(__dirname, `${projectId}.mp4`);
 
-    console.log(`Starting Project for: ${topic}`);
+    console.log(`Working on: ${topic}`);
 
-    // ভিডিও জেনারেশন লজিক
-    // আমরা এখানে ১০ সেকেন্ডের একটি ভিডিও বানাচ্ছি যেখানে টপিক এবং ভয়েস নাম লেখা থাকবে
     ffmpeg()
-        .input('color=c=navy:s=720x1280:d=10') // পোর্ট্রেট মোড (Shorts Style)
+        .input('color=c=navy:s=720x1280:d=5') // সময় কমিয়ে ৫ সেকেন্ড করলাম দ্রুত রেন্ডারের জন্য
         .inputFormat('lavfi')
         .complexFilter([
-            {
-                filter: 'drawtext',
-                options: {
-                    text: `${topic}\n(${language})`,
-                    fontsize: 45,
-                    fontcolor: 'white',
-                    x: '(w-text_w)/2',
-                    y: '(h-text_h)/2 - 50',
-                    box: 1, boxcolor: 'black@0.5', boxborderw: 15
-                }
-            },
-            {
-                filter: 'drawtext',
-                options: {
-                    text: `Voice: ${voiceName}`,
-                    fontsize: 30,
-                    fontcolor: 'yellow',
-                    x: '(w-text_w)/2',
-                    y: '(h-text_h)/2 + 100'
-                }
-            }
+            `drawtext=text='${topic}':fontsize=40:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2`
         ])
         .outputOptions(['-pix_fmt yuv420p'])
+        .on('error', (err) => {
+            console.error("FFmpeg error: " + err.message);
+            if (jobs[projectId]) jobs[projectId].status = "failed";
+        })
         .on('end', async () => {
             try {
-                // Cloudinary-তে আপলোড করা
                 const result = await cloudinary.uploader.upload(outputPath, { 
-                    resource_type: "video",
-                    public_id: projectId 
+                    resource_type: "video" 
                 });
-                
                 jobs[projectId] = { status: "completed", link: result.secure_url };
-                
-                // লোকাল ফাইল ডিলিট
                 if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-                console.log("Success: " + result.secure_url);
             } catch (err) {
-                jobs[projectId].status = "failed";
-                console.error("Upload failed", err);
+                console.error("Cloudinary error: ", err);
+                if (jobs[projectId]) jobs[projectId].status = "failed";
             }
         })
         .save(outputPath);
 
+    // সাথে সাথে রেসপন্স পাঠানো যেন n8n টাইমআউট না হয়
     res.json({ project: projectId, status: "success" });
 });
 
-// ৩. GET Method: n8n স্ট্যাটাস চেক করবে
+// ৩. স্ট্যাটাস চেক
 app.get('/make-video', (req, res) => {
     const projectId = req.query.project;
-    res.json(jobs[projectId] || { error: "Not found" });
+    if (jobs[projectId]) {
+        res.json(jobs[projectId]);
+    } else {
+        res.status(404).json({ error: "Job not found" });
+    }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log('Server running...'));
+app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
