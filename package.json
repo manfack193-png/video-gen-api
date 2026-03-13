@@ -1,14 +1,12 @@
 {
   "name": "video-gen-api",
   "version": "1.0.0",
-  "description": "Video API with Cloudinary Storage",
   "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
+  "scripts": { "start": "node index.js" },
   "dependencies": {
     "express": "^4.18.2",
     "cloudinary": "^2.0.0",
-    "fluent-ffmpeg": "^2.1.2"
+    "fluent-ffmpeg": "^2.1.2",
+    "axios": "^1.6.0"
   }
 }
