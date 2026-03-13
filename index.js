@@ -1,24 +1,18 @@
 const express = require('express');
-const { render } = require('rendervid');
 const app = express();
 
 app.use(express.json());
 
-app.post('/make-video', async (req, res) => {
-    try {
-        const data = req.body;
-        console.log("n8n Data Received:", data);
+app.post('/make-video', (req, res) => {
+    const data = req.body;
+    console.log("n8n থেকে পাওয়া তথ্য:", JSON.stringify(data, null, 2));
 
-        // This is a basic response to confirm API is working
-        res.json({
-            status: "success",
-            message: "Rendervid is triggered!",
-            received_data: data
-        });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+    res.json({
+        status: "success",
+        message: "আপনার পাঠানো তথ্য Render সার্ভারে পৌঁছেছে!",
+        received_variables: data.variables || "No variables found"
+    });
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`সার্ভার চলছে পোর্ট ${PORT}-এ`));
