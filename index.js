@@ -15,33 +15,39 @@ cloudinary.config({
 
 let jobs = {};
 
-app.get('/', (req, res) => res.send("Server is Live"));
+app.get('/', (req, res) => res.send("Video Engine Active"));
 
 app.post('/make-video', (req, res) => {
     const projectId = "vid_" + Date.now();
     const vars = req.body.variables || {};
     
-    // বড় টেক্সটকে হ্যান্ডেল করার জন্য লজিক
-    let topic = vars.topic || "No Topic";
-    // প্রতি ৩০ ক্যারেক্টার পর পর লাইন ব্রেক করবে
-    topic = topic.replace(/(.{1,30})(\s|$)/g, "$1\n");
+    // টেক্সট থেকে সব ঝামেলাপূর্ণ চিহ্ন সরিয়ে ফেলা (এটাই সমাধান)
+    let topic = vars.topic || "Success Mindset";
+    topic = topic.replace(/[:']/g, "").replace(/[^a-zA-Z0-9\s.,!?]/g, ""); 
+    
+    // টেক্সটকে ছোট ছোট লাইনে ভাগ করা
+    const words = topic.split(' ');
+    let formattedTopic = '';
+    for (let i = 0; i < words.length; i++) {
+        formattedTopic += words[i] + ' ';
+        if ((i + 1) % 4 === 0) formattedTopic += '\n'; // প্রতি ৪ শব্দ পর পর নতুন লাইন
+    }
 
     jobs[projectId] = { status: "processing", link: null };
     const outputPath = path.join(__dirname, `${projectId}.mp4`);
 
     ffmpeg()
-        .input('color=c=navy:s=720x1280:d=7') // ৭ সেকেন্ডের ভিডিও
+        .input('color=c=navy:s=720x1280:d=5') // ৫ সেকেন্ডের ভিডিও
         .inputFormat('lavfi')
         .complexFilter([
             {
                 filter: 'drawtext',
                 options: {
-                    text: topic,
-                    fontsize: 35,
+                    text: formattedTopic.trim(),
+                    fontsize: 40,
                     fontcolor: 'white',
                     x: '(w-text_w)/2',
                     y: '(h-text_h)/2',
-                    line_spacing: 10,
                     box: 1,
                     boxcolor: 'black@0.6',
                     boxborderw: 20
