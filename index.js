@@ -1,6 +1,6 @@
 const express = require('express');
+const { FFScene, FFText, FFCreator } = require('ffcreator');
 const cloudinary = require('cloudinary').v2;
-const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs');
 
@@ -15,56 +15,69 @@ cloudinary.config({
 
 let jobs = {};
 
-app.get('/', (req, res) => res.send("High-Capacity Engine is Ready!"));
+app.get('/', (req, res) => res.send("FFCreator Engine Active!"));
 
-app.post('/make-video', (req, res) => {
+app.post('/make-video', async (req, res) => {
     const projectId = "vid_" + Date.now();
-    const vars = req.body.variables || {};
+    const topic = req.body.variables?.topic || "Success Story";
     
-    // ১. বড় টেক্সটকে ক্লিন করা এবং কোলন/কোড এরর থেকে বাঁচানো
-    let topic = (vars.topic || "Success").replace(/[:'"]/g, "");
-
-    // ২. টেক্সট র‍্যাপিং (প্রতি ৩০ ক্যারেক্টার পর পর লাইন ব্রেক)
-    let wrappedText = topic.match(/.{1,30}(\s|$)/g).join('\n');
-
     jobs[projectId] = { status: "processing", link: null };
-    const outputPath = path.join(__dirname, `${projectId}.mp4`);
+    const outputDir = path.join(__dirname, 'output');
+    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
+    const outputPath = path.join(outputDir, `${projectId}.mp4`);
 
-    // ৩. হাই-ক্যাপাসিটি রেন্ডারিং কমান্ড
-    ffmpeg()
-        .input('color=c=navy:s=720x1280:d=10') // ১০ সেকেন্ডের পোর্ট্রেট ভিডিও
-        .inputFormat('lavfi')
-        .complexFilter([
-            {
-                filter: 'drawtext',
-                options: {
-                    text: wrappedText,
-                    fontsize: 40,
-                    fontcolor: 'white',
-                    x: '(w-text_w)/2',
-                    y: '(h-text_h)/2',
-                    box: 1,
-                    boxcolor: 'black@0.6',
-                    boxborderw: 20,
-                    line_spacing: 15
-                }
-            }
-        ])
-        .outputOptions(['-pix_fmt yuv420p', '-c:v libx264', '-preset superfast'])
-        .on('error', (err) => {
-            console.error("Critical Error: " + err.message);
+    // ভিডিও সেটআপ (Shorts Size: 720x1280)
+    const creator = new FFCreator({
+        cacheDir: path.join(__dirname, 'cache'),
+        output: outputPath,
+        width: 720,
+        height: 1280,
+        fps: 24,
+        parallel: 4
+    });
+
+    const scene = new FFScene();
+    scene.setBackground('#001F3F'); // নেভি ব্লু
+    scene.setDuration(7); 
+
+    // বড় টেক্সট হ্যান্ডেল করার ম্যাজিক এখানে
+    const text = new FFText({
+        text: topic,
+        x: 360,
+        y: 640,
+        fontSize: 35,
+        color: '#ffffff'
+    });
+    
+    text.setAnchor(0.5);
+    // wordWrapWidth ব্যবহার করলে টেক্সট অটোমেটিক পরের লাইনে চলে যাবে
+    text.setStyle({ 
+        wordWrap: true, 
+        wordWrapWidth: 600, 
+        align: 'center',
+        lineHeight: 45
+    });
+    
+    scene.addChild(text);
+    creator.addChild(scene);
+
+    creator.start();
+
+    creator.on('error', e => {
+        console.log("FFCreator Error: " + e.msg);
+        if(jobs[projectId]) jobs[projectId].status = "failed";
+    });
+
+    creator.on('complete', async () => {
+        try {
+            const result = await cloudinary.uploader.upload(outputPath, { resource_type: "video" });
+            jobs[projectId] = { status: "completed", link: result.secure_url };
+            if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+            console.log("Video Success: " + result.secure_url);
+        } catch (err) {
             if(jobs[projectId]) jobs[projectId].status = "failed";
-        })
-        .on('end', async () => {
-            try {
-                const result = await cloudinary.uploader.upload(outputPath, { resource_type: "video" });
-                jobs[projectId] = { status: "completed", link: result.secure_url };
-                if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-            } catch (err) {
-                if(jobs[projectId]) jobs[projectId].status = "failed";
-            }
-        })
-        .save(outputPath);
+        }
+    });
 
     res.json({ project: projectId, status: "success" });
 });
@@ -73,4 +86,5 @@ app.get('/make-video', (req, res) => {
     res.json(jobs[req.query.project] || { error: "Not found" });
 });
 
-app.listen(process.env.PORT || 10000);
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log('Server Live!'));
