@@ -15,50 +15,44 @@ cloudinary.config({
 
 let jobs = {};
 
-app.get('/', (req, res) => res.send("Video Engine Active"));
+app.get('/', (req, res) => res.send("High-Capacity Engine is Ready!"));
 
 app.post('/make-video', (req, res) => {
     const projectId = "vid_" + Date.now();
     const vars = req.body.variables || {};
     
-    // টেক্সট থেকে সব ধরণের ঝামেলাপূর্ণ ক্যারেক্টার এবং নতুন লাইন মুছে ফেলা
-    let topic = (vars.topic || "Success").replace(/[:'"]/g, "").replace(/\n/g, " ");
-    
-    // টেক্সট র‍্যাপিং লজিক
-    const words = topic.split(' ');
-    let finalTopic = '';
-    for (let i = 0; i < words.length; i++) {
-        finalTopic += words[i] + ' ';
-        if ((i + 1) % 4 === 0) finalTopic += '\n';
-    }
+    // ১. বড় টেক্সটকে ক্লিন করা এবং কোলন/কোড এরর থেকে বাঁচানো
+    let topic = (vars.topic || "Success").replace(/[:'"]/g, "");
+
+    // ২. টেক্সট র‍্যাপিং (প্রতি ৩০ ক্যারেক্টার পর পর লাইন ব্রেক)
+    let wrappedText = topic.match(/.{1,30}(\s|$)/g).join('\n');
 
     jobs[projectId] = { status: "processing", link: null };
     const outputPath = path.join(__dirname, `${projectId}.mp4`);
 
-    console.log(`Working on job: ${projectId}`);
-
-    // আমরা complexFilter এর বদলে সহজ ভিডিও ফিল্টার ব্যবহার করছি
+    // ৩. হাই-ক্যাপাসিটি রেন্ডারিং কমান্ড
     ffmpeg()
-        .input('color=c=navy:s=720x1280:d=5')
+        .input('color=c=navy:s=720x1280:d=10') // ১০ সেকেন্ডের পোর্ট্রেট ভিডিও
         .inputFormat('lavfi')
-        .videoFilters([
+        .complexFilter([
             {
                 filter: 'drawtext',
                 options: {
-                    text: finalTopic.trim(),
+                    text: wrappedText,
                     fontsize: 40,
                     fontcolor: 'white',
                     x: '(w-text_w)/2',
                     y: '(h-text_h)/2',
                     box: 1,
                     boxcolor: 'black@0.6',
-                    boxborderw: 20
+                    boxborderw: 20,
+                    line_spacing: 15
                 }
             }
         ])
-        .outputOptions(['-pix_fmt yuv420p'])
+        .outputOptions(['-pix_fmt yuv420p', '-c:v libx264', '-preset superfast'])
         .on('error', (err) => {
-            console.log("FFMPEG ERROR: " + err.message);
+            console.error("Critical Error: " + err.message);
             if(jobs[projectId]) jobs[projectId].status = "failed";
         })
         .on('end', async () => {
