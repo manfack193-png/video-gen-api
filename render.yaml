@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: video-gen-api
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
